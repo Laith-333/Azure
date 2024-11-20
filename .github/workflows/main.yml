@@ -1,0 +1,82 @@
+name: Build, Push, and Deploy to Azure with Storage Integration
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Log in to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Create Azure Storage Account
+      id: create-storage
+      uses: azure/CLI@v1
+      with:
+        inlineScript: |
+          STORAGE_ACCOUNT_NAME="storage${{ github.run_id }}"
+          RESOURCE_GROUP="Container_gp"
+          LOCATION="northeurope"
+          CONTAINER_NAME="mycontainer"
+
+          # Create the storage account
+          az storage account create \
+            --name $STORAGE_ACCOUNT_NAME \
+            --resource-group $RESOURCE_GROUP \
+            --location $LOCATION \
+            --sku Standard_LRS \
+            --kind StorageV2
+
+          # Create a blob container
+          CONNECTION_STRING=$(az storage account show-connection-string \
+            --name $STORAGE_ACCOUNT_NAME \
+            --resource-group $RESOURCE_GROUP \
+            --query connectionString \
+            --output tsv)
+
+          az storage container create \
+            --name $CONTAINER_NAME \
+            --connection-string $CONNECTION_STRING
+
+          echo "STORAGE_ACCOUNT_NAME=$STORAGE_ACCOUNT_NAME" >> $GITHUB_ENV
+          echo "CONNECTION_STRING=$CONNECTION_STRING" >> $GITHUB_ENV
+          echo "CONTAINER_NAME=$CONTAINER_NAME" >> $GITHUB_ENV
+
+    - name: Log in to Azure Container Registry
+      uses: azure/docker-login@v1
+      with:
+        login-server: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+        client-id: ${{ secrets.AZURE_CREDENTIALS.clientId }}
+        client-secret: ${{ secrets.AZURE_CREDENTIALS.clientSecret }}
+        tenant-id: ${{ secrets.AZURE_CREDENTIALS.tenantId }}
+
+    - name: Build and Push Docker Image
+      run: |
+        docker build -t ${{ secrets.REGISTRY_LOGIN_SERVER }}/python-website:latest .
+        docker push ${{ secrets.REGISTRY_LOGIN_SERVER }}/python-website:latest
+
+    - name: Deploy to Azure Container Instances
+      uses: azure/CLI@v1
+      with:
+        inlineScript: |
+          az container create \
+            --resource-group Container_gp \
+            --name python-website-container \
+            --image ${{ secrets.REGISTRY_LOGIN_SERVER }}/python-website:latest \
+            --cpu 1 \
+            --memory 1.5 \
+            --registry-login-server ${{ secrets.REGISTRY_LOGIN_SERVER }} \
+            --registry-username ${{ secrets.AZURE_CREDENTIALS.clientId }} \
+            --registry-password ${{ secrets.AZURE_CREDENTIALS.clientSecret }} \
+            --environment-variables AZURE_STORAGE_CONNECTION_STRING="$CONNECTION_STRING" AZURE_CONTAINER_NAME="$CONTAINER_NAME" \
+            --dns-name-label python-website \
+            --ports 80
