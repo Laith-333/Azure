@@ -17,7 +17,7 @@ COPY app/ /app
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy Nginx configuration
-COPY nginx.conf /etc/nginx/nginx.conf
+COPY app/nginx.conf /etc/nginx/nginx.conf
 
 # Expose port 80
 EXPOSE 80
