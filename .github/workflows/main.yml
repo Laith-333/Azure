@@ -20,10 +20,13 @@ jobs:
         username: ${{ secrets.ACR_USERNAME }}
         password: ${{ secrets.ACR_PASSWORD }}
 
+    - name: Check Docker Version
+      run: docker --version
+
     - name: Build and Push Docker Image
       run: |
         docker build -t ${{ secrets.REGISTRY_LOGIN_SERVER }}/python-website:latest .
-        docker push ${{ secrets.REGISTRY_LOGIN_SERVER }}/python-website:latest --max-concurrent-uploads 1
+        docker push ${{ secrets.REGISTRY_LOGIN_SERVER }}/python-website:latest
 
     - name: Deploy to Azure Container Instances
       uses: azure/CLI@v1
